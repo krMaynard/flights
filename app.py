@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import date, timedelta
+import secrets
+from datetime import date, datetime, timedelta
+from typing import Optional
+from urllib.parse import urlparse
 
 from flask import (
     Flask,
@@ -21,7 +24,22 @@ import flights
 
 
 app = Flask(__name__)
-app.secret_key = os.environ.get("FLIGHTS_SECRET", "dev-secret-change-me")
+
+
+def _resolve_secret_key() -> str:
+    env_secret = os.environ.get("FLIGHTS_SECRET")
+    if env_secret:
+        return env_secret
+    if os.environ.get("FLIGHTS_ENV", "development") != "development":
+        raise RuntimeError(
+            "FLIGHTS_SECRET must be set when FLIGHTS_ENV is not 'development'."
+        )
+    # Random per-process secret for dev. Sessions don't survive restarts,
+    # which is the right default for local work.
+    return secrets.token_hex(32)
+
+
+app.secret_key = _resolve_secret_key()
 
 db.init_db()
 
@@ -76,8 +94,12 @@ def search():
     return_date = (form.get("return_date") or "").strip() or None
     trip = form.get("trip") or "one-way"
     seat = form.get("seat") or "economy"
-    adults = max(int(form.get("adults") or 1), 1)
-    children = max(int(form.get("children") or 0), 0)
+    try:
+        adults = max(int(form.get("adults") or 1), 1)
+        children = max(int(form.get("children") or 0), 0)
+    except (TypeError, ValueError):
+        flash("Passenger counts must be whole numbers.", "error")
+        return redirect(url_for("index"))
     max_stops_raw = (form.get("max_stops") or "").strip()
     max_stops = int(max_stops_raw) if max_stops_raw.isdigit() else None
 
@@ -180,6 +202,63 @@ def delete_plan_route(plan_id: int):
     return redirect(url_for("plans"))
 
 
+MAX_LEG_FIELD_LEN = 200
+ALLOWED_LEG_SOURCES = {"google", "mock", "unknown"}
+ALLOWED_SEATS = {key for key, _ in SEAT_CHOICES}
+
+
+def _validated_offer(raw_payload: str) -> Optional[dict]:
+    """Parse and shape-check the hidden flight payload.
+
+    The payload is round-tripped through the client, so we don't trust its
+    contents — we just keep them in known fields with bounded sizes so a
+    tampered submission can't smuggle in unexpected types.
+    """
+    try:
+        data = json.loads(raw_payload)
+    except (TypeError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+
+    def _str(value, default: str = "") -> str:
+        if value is None:
+            return default
+        return str(value)[:MAX_LEG_FIELD_LEN]
+
+    try:
+        stops = int(data.get("stops") or 0)
+    except (TypeError, ValueError):
+        stops = 0
+    stops = max(0, min(stops, 10))
+
+    source = _str(data.get("source"), "unknown")
+    if source not in ALLOWED_LEG_SOURCES:
+        source = "unknown"
+
+    return {
+        "airline": _str(data.get("airline"), "Unknown"),
+        "departure": _str(data.get("departure")),
+        "arrival": _str(data.get("arrival")),
+        "duration": _str(data.get("duration")),
+        "stops": stops,
+        "price": _str(data.get("price")),
+        "source": source,
+    }
+
+
+def _safe_next_url(value: Optional[str], fallback: str) -> str:
+    """Allow only same-origin relative URLs to avoid open redirects."""
+    if not value:
+        return fallback
+    parsed = urlparse(value)
+    if parsed.scheme or parsed.netloc:
+        return fallback
+    if not value.startswith("/"):
+        return fallback
+    return value
+
+
 @app.route("/plans/<int:plan_id>/legs", methods=["POST"])
 def add_leg(plan_id: int):
     plan = db.get_plan(plan_id)
@@ -190,9 +269,9 @@ def add_leg(plan_id: int):
     if not raw_payload:
         flash("Missing flight payload.", "error")
         return redirect(url_for("view_plan", plan_id=plan_id))
-    try:
-        offer = json.loads(raw_payload)
-    except json.JSONDecodeError:
+
+    offer = _validated_offer(raw_payload)
+    if offer is None:
         flash("Could not parse flight payload.", "error")
         return redirect(url_for("view_plan", plan_id=plan_id))
 
@@ -201,27 +280,39 @@ def add_leg(plan_id: int):
     depart_date = (request.form.get("depart_date") or "").strip()
     seat = (request.form.get("seat") or "economy").strip()
 
+    if len(origin) != 3 or not origin.isalpha() or len(destination) != 3 or not destination.isalpha():
+        flash("Leg must use 3-letter IATA codes.", "error")
+        return redirect(url_for("view_plan", plan_id=plan_id))
+    try:
+        datetime.strptime(depart_date, "%Y-%m-%d")
+    except ValueError:
+        flash("Leg depart date is not a valid date.", "error")
+        return redirect(url_for("view_plan", plan_id=plan_id))
+    if seat not in ALLOWED_SEATS:
+        seat = "economy"
+
     db.add_leg(
         plan_id,
         origin=origin,
         destination=destination,
         depart_date=depart_date,
-        airline=offer.get("airline", "Unknown"),
-        departure=offer.get("departure", ""),
-        arrival=offer.get("arrival", ""),
-        duration=offer.get("duration", ""),
-        stops=int(offer.get("stops") or 0),
-        price=offer.get("price", ""),
+        airline=offer["airline"],
+        departure=offer["departure"],
+        arrival=offer["arrival"],
+        duration=offer["duration"],
+        stops=offer["stops"],
+        price=offer["price"],
         seat=seat,
-        source=offer.get("source", "unknown"),
+        source=offer["source"],
         raw=offer,
     )
     flash(
-        f"Added {offer.get('airline', 'flight')} ({origin}→{destination}) to '{plan['name']}'.",
+        f"Added {offer['airline']} ({origin}→{destination}) to '{plan['name']}'.",
         "success",
     )
-    next_url = request.form.get("next") or url_for("view_plan", plan_id=plan_id)
-    return redirect(next_url)
+    return redirect(
+        _safe_next_url(request.form.get("next"), url_for("view_plan", plan_id=plan_id))
+    )
 
 
 @app.route("/plans/<int:plan_id>/legs/<int:leg_id>/delete", methods=["POST"])
@@ -235,4 +326,5 @@ def delete_leg(plan_id: int, leg_id: int):
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=int(os.environ.get("PORT", 5000)), debug=True)
+    debug = os.environ.get("FLIGHTS_DEBUG", "1") == "1"
+    app.run(host="127.0.0.1", port=int(os.environ.get("PORT", 5000)), debug=debug)

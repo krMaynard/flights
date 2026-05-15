@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import random
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Literal, Optional
 
 from fast_flights import FlightData, Passengers, get_flights
@@ -157,7 +157,7 @@ def _mock_offers_for_leg(
     try:
         base_date = datetime.strptime(depart_date, "%Y-%m-%d")
     except ValueError:
-        base_date = datetime.utcnow()
+        base_date = datetime.now(timezone.utc).replace(tzinfo=None)
 
     base_hours = 2 + (sum(ord(c) for c in origin + destination) % 10)
     base_price = 120 + (sum(ord(c) for c in origin + destination) % 350)

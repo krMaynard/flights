@@ -5,7 +5,8 @@ from __future__ import annotations
 import json
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Iterator, Optional
 
@@ -77,7 +78,12 @@ def create_plan(name: str, traveler: Optional[str], notes: Optional[str]) -> int
     with get_conn() as conn:
         cur = conn.execute(
             "INSERT INTO plan (name, traveler, notes, created_at) VALUES (?, ?, ?, ?)",
-            (name, traveler or None, notes or None, datetime.utcnow().isoformat(timespec="seconds")),
+            (
+                name,
+                traveler or None,
+                notes or None,
+                datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            ),
         )
         return int(cur.lastrowid)
 
@@ -142,18 +148,19 @@ def delete_leg(leg_id: int) -> None:
 
 def plan_totals(plan_id: int) -> dict:
     legs = list_legs(plan_id)
-    total_cents = 0
+    total = Decimal("0")
     has_price = False
     for leg in legs:
         price = (leg["price"] or "").strip()
         digits = "".join(ch for ch in price if ch.isdigit() or ch == ".")
-        if digits:
-            try:
-                total_cents += int(round(float(digits) * 100))
-                has_price = True
-            except ValueError:
-                pass
+        if not digits or digits == ".":
+            continue
+        try:
+            total += Decimal(digits)
+            has_price = True
+        except InvalidOperation:
+            pass
     return {
         "leg_count": len(legs),
-        "total_price": f"${total_cents / 100:,.2f}" if has_price else None,
+        "total_price": f"${total.quantize(Decimal('0.01')):,}" if has_price else None,
     }
