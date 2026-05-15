@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Search flights · Flight Planner{% endblock %}
+
+{% block content %}
+<section class="hero">
+    <h1>Plan your next trip</h1>
+    <p>Search Google Flights and build a multi-leg itinerary you can come back to.</p>
+</section>
+
+{% include "_search_form.html" %}
+
+{% if plans %}
+<section class="recent-plans">
+    <header>
+        <h2>Your trip plans</h2>
+        <a class="ghost" href="{{ url_for('plans') }}">View all</a>
+    </header>
+    <ul class="plan-list">
+        {% for plan in plans[:4] %}
+            <li>
+                <a href="{{ url_for('view_plan', plan_id=plan['id']) }}">
+                    <strong>{{ plan['name'] }}</strong>
+                    <span>{{ plan['leg_count'] }} leg{{ '' if plan['leg_count'] == 1 else 's' }}{% if plan['first_date'] %} · starts {{ plan['first_date'] }}{% endif %}</span>
+                </a>
+            </li>
+        {% endfor %}
+    </ul>
+</section>
+{% endif %}
+
+<section class="quickstart">
+    <h2>Quick examples</h2>
+    <div class="example-row">
+        <a class="chip" href="{{ url_for('index', origin='SFO', destination='JFK', trip='one-way') }}">SFO → JFK</a>
+        <a class="chip" href="{{ url_for('index', origin='LAX', destination='LHR', trip='round-trip') }}">LAX ↔ LHR</a>
+        <a class="chip" href="{{ url_for('index', origin='JFK', destination='CDG', trip='round-trip') }}">JFK ↔ CDG</a>
+        <a class="chip" href="{{ url_for('index', origin='SEA', destination='HND', trip='round-trip') }}">SEA ↔ HND</a>
+    </div>
+</section>
+{% endblock %}
