@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}My plans · Flight Planner{% endblock %}
+
+{% block content %}
+<section class="page-header">
+    <h1>Trip plans</h1>
+    <details class="new-plan">
+        <summary class="primary as-button">New plan</summary>
+        <form method="post" action="{{ url_for('create_plan') }}">
+            <label>
+                <span>Plan name</span>
+                <input name="name" required placeholder="Spring break">
+            </label>
+            <label>
+                <span>Traveler</span>
+                <input name="traveler" placeholder="Jordan">
+            </label>
+            <label>
+                <span>Notes</span>
+                <textarea name="notes" rows="2"></textarea>
+            </label>
+            <button type="submit" class="primary">Create plan</button>
+        </form>
+    </details>
+</section>
+
+{% if plans %}
+    <ul class="plan-grid">
+        {% for plan in plans %}
+            <li>
+                <a class="plan-card" href="{{ url_for('view_plan', plan_id=plan['id']) }}">
+                    <h3>{{ plan['name'] }}</h3>
+                    {% if plan['traveler'] %}<p class="muted">{{ plan['traveler'] }}</p>{% endif %}
+                    <p>
+                        <strong>{{ plan['leg_count'] }}</strong>
+                        leg{{ '' if plan['leg_count'] == 1 else 's' }}
+                        {% if plan['first_date'] %}<span class="muted"> · starts {{ plan['first_date'] }}</span>{% endif %}
+                    </p>
+                    {% if plan['notes'] %}<p class="notes">{{ plan['notes'] }}</p>{% endif %}
+                </a>
+            </li>
+        {% endfor %}
+    </ul>
+{% else %}
+    <p class="empty">No plans yet. Run a search and click <em>Save leg</em> on a result, or create one above.</p>
+{% endif %}
+{% endblock %}

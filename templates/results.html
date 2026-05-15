@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}{{ query.origin }} → {{ query.destination }} · Flight Planner{% endblock %}
+
+{% block content %}
+<section class="results-header">
+    <h1>{{ query.origin }} → {{ query.destination }}</h1>
+    <p class="muted">
+        {{ query.depart_date }}{% if query.return_date %} · returning {{ query.return_date }}{% endif %}
+        · {{ query.adults }} adult{{ '' if query.adults == 1 else 's' }}{% if query.children %} · {{ query.children }} child{{ 'ren' if query.children > 1 else '' }}{% endif %}
+        · {{ query.seat.replace('-', ' ') }}
+        {% if query.max_stops %} · ≤ {{ query.max_stops }} stop{{ '' if query.max_stops == '1' else 's' }}{% endif %}
+    </p>
+    {% if result.current_price %}
+        <p class="price-pulse">Google reports this fare is <strong>{{ result.current_price }}</strong>.</p>
+    {% endif %}
+    {% if result.source == 'mock' %}
+        <p class="banner banner-warn">{{ result.notice }}</p>
+    {% endif %}
+    <details class="modify">
+        <summary>Modify search</summary>
+        {% set defaults = query %}
+        {% include "_search_form.html" %}
+    </details>
+</section>
+
+{% if result.flights %}
+<ol class="flight-list">
+    {% for flight in result.flights %}
+        <li class="flight {% if flight.is_best %}flight-best{% endif %}">
+            <div class="flight-main">
+                <div class="flight-times">
+                    <div class="time-row">
+                        <span class="time">{{ flight.departure }}</span>
+                        <span class="arrow">→</span>
+                        <span class="time">
+                            {{ flight.arrival }}
+                            {% if flight.arrival_time_ahead %}<sup>{{ flight.arrival_time_ahead }}</sup>{% endif %}
+                        </span>
+                    </div>
+                    <div class="flight-airline">{{ flight.airline }}</div>
+                </div>
+                <div class="flight-meta">
+                    <span>{{ flight.duration }}</span>
+                    <span>{% if flight.stops == 0 %}Nonstop{% elif flight.stops == 1 %}1 stop{% else %}{{ flight.stops }} stops{% endif %}</span>
+                    {% if flight.delay %}<span class="delay">{{ flight.delay }}</span>{% endif %}
+                </div>
+                <div class="flight-price">
+                    <span class="price">{{ flight.price }}</span>
+                    {% if flight.is_best %}<span class="badge">Best</span>{% endif %}
+                </div>
+            </div>
+
+            <form class="flight-actions" method="post" action="{{ url_for('add_leg', plan_id=0) }}"
+                  onsubmit="return submitAddLeg(this);">
+                <input type="hidden" name="origin" value="{{ query.origin }}">
+                <input type="hidden" name="destination" value="{{ query.destination }}">
+                <input type="hidden" name="depart_date" value="{{ query.depart_date }}">
+                <input type="hidden" name="seat" value="{{ query.seat }}">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <input type="hidden" name="payload" value='{{ flight.to_dict() | tojson | e }}'>
+                <select name="plan_id" required>
+                    <option value="">Add to plan…</option>
+                    {% for plan in plans %}
+                        <option value="{{ plan['id'] }}">{{ plan['name'] }}</option>
+                    {% endfor %}
+                    <option value="__new__">+ New plan…</option>
+                </select>
+                <button type="submit" class="ghost">Save leg</button>
+            </form>
+        </li>
+    {% endfor %}
+</ol>
+{% else %}
+    <p class="empty">No flights found. Try different dates or airports.</p>
+{% endif %}
+
+<dialog id="new-plan-dialog">
+    <form method="post" action="{{ url_for('create_plan') }}" id="new-plan-form">
+        <h3>Name your new trip plan</h3>
+        <label>
+            <span>Plan name</span>
+            <input name="name" required placeholder="Summer in Tokyo">
+        </label>
+        <label>
+            <span>Traveler (optional)</span>
+            <input name="traveler" placeholder="Alex">
+        </label>
+        <label>
+            <span>Notes (optional)</span>
+            <textarea name="notes" rows="2"></textarea>
+        </label>
+        <div class="dialog-actions">
+            <button type="button" onclick="document.getElementById('new-plan-dialog').close()" class="ghost">Cancel</button>
+            <button type="submit" class="primary">Create</button>
+        </div>
+    </form>
+</dialog>
+
+<script>
+function submitAddLeg(form) {
+    const select = form.querySelector('select[name="plan_id"]');
+    const value = select.value;
+    if (!value) {
+        alert('Pick a plan or create a new one.');
+        return false;
+    }
+    if (value === '__new__') {
+        document.getElementById('new-plan-dialog').showModal();
+        return false;
+    }
+    form.action = '/plans/' + value + '/legs';
+    return true;
+}
+</script>
+{% endblock %}

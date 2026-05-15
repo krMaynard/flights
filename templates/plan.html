@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}{{ plan['name'] }} · Flight Planner{% endblock %}
+
+{% block content %}
+<section class="plan-header">
+    <div>
+        <h1>{{ plan['name'] }}</h1>
+        {% if plan['traveler'] %}<p class="muted">Traveler: {{ plan['traveler'] }}</p>{% endif %}
+        <p class="muted">
+            {{ totals.leg_count }} leg{{ '' if totals.leg_count == 1 else 's' }}
+            {% if totals.total_price %} · est. total <strong>{{ totals.total_price }}</strong>{% endif %}
+        </p>
+        {% if plan['notes'] %}<p>{{ plan['notes'] }}</p>{% endif %}
+    </div>
+    <details class="edit-plan">
+        <summary class="ghost as-button">Edit</summary>
+        <form method="post" action="{{ url_for('edit_plan', plan_id=plan['id']) }}">
+            <label><span>Name</span><input name="name" value="{{ plan['name'] }}" required></label>
+            <label><span>Traveler</span><input name="traveler" value="{{ plan['traveler'] or '' }}"></label>
+            <label><span>Notes</span><textarea name="notes" rows="3">{{ plan['notes'] or '' }}</textarea></label>
+            <button type="submit" class="primary">Save</button>
+        </form>
+        <form method="post" action="{{ url_for('delete_plan_route', plan_id=plan['id']) }}"
+              onsubmit="return confirm('Delete this whole plan?');">
+            <button type="submit" class="danger">Delete plan</button>
+        </form>
+    </details>
+</section>
+
+{% if legs %}
+<ol class="legs">
+    {% for leg in legs %}
+    <li class="leg">
+        <header>
+            <span class="leg-route">{{ leg['origin'] }} → {{ leg['destination'] }}</span>
+            <span class="muted">{{ leg['depart_date'] }}</span>
+        </header>
+        <div class="leg-body">
+            <div>
+                <div class="leg-airline">{{ leg['airline'] }}</div>
+                <div class="muted">{{ leg['departure'] }} → {{ leg['arrival'] }}</div>
+                <div class="muted">
+                    {{ leg['duration'] }} ·
+                    {% if leg['stops'] == 0 %}Nonstop
+                    {% elif leg['stops'] == 1 %}1 stop
+                    {% else %}{{ leg['stops'] }} stops{% endif %}
+                    · {{ leg['seat'] }}
+                </div>
+            </div>
+            <div class="leg-price">{{ leg['price'] }}</div>
+        </div>
+        <footer>
+            <a class="ghost" href="{{ url_for('index', origin=leg['destination'], destination='', depart_date=leg['depart_date']) }}">Search next leg</a>
+            <form method="post" action="{{ url_for('delete_leg', plan_id=plan['id'], leg_id=leg['id']) }}"
+                  onsubmit="return confirm('Remove this leg?');">
+                <button type="submit" class="danger-ghost">Remove</button>
+            </form>
+        </footer>
+    </li>
+    {% endfor %}
+</ol>
+{% else %}
+    <p class="empty">No legs yet. <a href="{{ url_for('index') }}">Search for flights</a> and add one to this plan.</p>
+{% endif %}
+
+<section class="add-more">
+    <h2>Add another leg</h2>
+    <p class="muted">Search and pick "{{ plan['name'] }}" from the plan dropdown on any result.</p>
+    <a class="primary as-button" href="{{ url_for('index') }}">Open search</a>
+</section>
+{% endblock %}
