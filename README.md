@@ -18,10 +18,23 @@ trip plans you can save and revisit.
 
 ## Run
 
+The app runs out of a local virtualenv. The first time:
+
 ```bash
+./setup.sh        # creates .venv/ and installs requirements
+./run.sh          # starts the app on http://127.0.0.1:5000
+```
+
+Or manually:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 python app.py
 ```
+
+Requires Python 3.10+.
 
 Then open <http://127.0.0.1:5000>.
 
