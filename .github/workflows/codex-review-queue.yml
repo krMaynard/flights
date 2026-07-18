@@ -19,8 +19,22 @@ jobs:
           script: |
             const pr = context.payload.pull_request;
             const body = pr.body || "";
-            const fromClaude =
+            let fromClaude =
               pr.head.ref.startsWith("claude/") || body.includes("Claude Code");
+            if (!fromClaude) {
+              const commits = await github.paginate(
+                github.rest.pulls.listCommits,
+                { owner: context.repo.owner, repo: context.repo.repo, pull_number: pr.number, per_page: 100 },
+              );
+              fromClaude = commits.some(commit => {
+                const author = (commit.commit.author?.name || "").toLowerCase();
+                const email = (commit.commit.author?.email || "").toLowerCase();
+                const message = commit.commit.message || "";
+                return author === "claude" || email.endsWith("@anthropic.com") ||
+                  message.includes("Claude-Session:") ||
+                  /Co-Authored-By:\s*Claude\b/i.test(message);
+              });
+            }
             if (pr.draft || !fromClaude) return;
 
             const labels = [
